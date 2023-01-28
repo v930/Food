@@ -1,0 +1,146 @@
+class DB_helper():
+    
+    def __init__(self):
+        self.conection = sqlite3.connect('food_database1.db')
+        self.cursorObj = self.conection.cursor()
+        
+    def sql_table(self):  #создаем таблички
+
+        self.cursorObj.execute("CREATE TABLE IF NOT EXISTS recipe(url_id integer PRIMARY KEY, title text, portions integer, cooking_time text, likes integer, dislikes integer,description text, calories integer,squirrels integer,fats integer, carbohydrates integer, process text,add_time date )")
+        self.cursorObj.execute("CREATE TABLE IF NOT EXISTS ingridients(id integer PRIMARY KEY AUTOINCREMENT, product text)")
+        self.cursorObj.execute("PRAGMA foreign_keys=on")
+        self.cursorObj.execute("CREATE TABLE IF NOT EXISTS ingredient_index(recipe_id integer, ingridient_id integer,gramms text, FOREIGN KEY (recipe_id) REFERENCES recipe(url_id),FOREIGN KEY (ingridient_id) REFERENCES ingridients(id))")
+        self.cursorObj.execute("CREATE TABLE IF NOT EXISTS tags(id integer PRIMARY KEY AUTOINCREMENT, tag_name text)")
+        self.cursorObj.execute("CREATE TABLE IF NOT EXISTS tags_index(recipe_id integer, tag_id integer, FOREIGN KEY (recipe_id) REFERENCES recipe(url_id),FOREIGN KEY (tag_id) REFERENCES tags(id))")
+        self.cursorObj.execute("CREATE TABLE IF NOT EXISTS comments(recipe_id integer, com_name text, FOREIGN KEY (recipe_id) REFERENCES recipe(url_id))")
+        self.conection.commit()
+    
+    def __get_current_date(self):
+        current_date = date.today()
+        timee = str(current_date)
+        return timee
+    
+    def insert_into_recipe(self, data):  #инфа в табличку рецепт
+
+        entities = [v for v in data.values()][:12]
+        date_ = self.__get_current_date()
+        entities.append(date_)
+        entities = tuple(entities)
+        existed_urls_id = [x[0] for x in  self.cursorObj.execute("select url_id from recipe").fetchall()] # массив idшек
+        if entities[0] in existed_urls_id:
+            pass
+        else:
+            self.cursorObj.execute('INSERT INTO recipe(url_id, title, portions, cooking_time, likes, dislikes,description, calories,squirrels,fats, carbohydrates, process, add_time) VALUES(?, ?, ?, ?, ?, ?,?,?,?,?,?,?,?)', entities)
+            self.conection.commit()
+
+    def insert_into_ingridients(self, data):  #инфа в таблиoчку ингредиенты
+        
+        ingredients = [k for k in data['ingredients'].keys()]
+        existed_ingrid = [x[0] for x in  self.cursorObj.execute("select product from ingridients").fetchall()] # массив ингредиентов
+
+        for ing in ingredients:
+            if ing in existed_ingrid:
+                pass
+            else:
+                self.cursorObj.execute('INSERT INTO ingridients(product) VALUES(?)', (ing,))
+                self.conection.commit() 
+        
+    def insert_into_ingredient_index(self, data):
+
+        existed_ids = [x for x in  self.cursorObj.execute("select * from ingredient_index").fetchall()]
+        id_rec = [row[0] for row in  self.cursorObj.execute('select url_id from recipe').fetchall()]
+
+        for k,v in data['ingredients'].items():
+            for row in  self.cursorObj.execute('select * from ingridients').fetchall():
+                if row[1] == k and data['url'] in id_rec:
+                    entities =(data['url'],row[0],v)
+                    if entities in existed_ids:
+                        pass
+                    else:
+                        self.cursorObj.execute('INSERT INTO ingredient_index(recipe_id,ingridient_id,gramms) VALUES(?,?,?)', entities)    
+                        self.conection.commit()
+
+    def insert_into_tags(self, data):
+
+        existed_tags = [x[0] for x in self.cursorObj.execute("select tag_name from tags").fetchall()] 
+        for tag in data['tags']:
+            if tag in existed_tags:
+                pass
+            else:
+                self.cursorObj.execute('INSERT INTO tags(tag_name) VALUES(?)', (tag,))
+                self.conection.commit()
+
+    def insert_into_tags_index(self,data):
+       
+        existed_tags = [x for x in self.cursorObj.execute("select * from tags_index").fetchall()]
+        id_rec = [row[0] for row in self.cursorObj.execute('select url_id from recipe').fetchall()]
+
+        for tag in data['tags']:
+            for row in self.cursorObj.execute('select * from tags').fetchall():
+                if row[1] == tag and data['url'] in id_rec:
+                    entities = (data['url'],row[0])
+
+                    if entities in existed_tags:
+                        pass
+                    else:
+                        self.cursorObj.execute('INSERT INTO tags_index(recipe_id, tag_id ) VALUES(?,?)', entities)    
+                        self.conection.commit()
+
+    def insert_into_comments(self,data):
+        existed_coms = [x for x in self.cursorObj.execute("select * from comments").fetchall()] 
+        if len(data['comments']) == 0:
+            self.cursorObj.execute('INSERT INTO comments(recipe_id, com_name) VALUES(?,?)', (data['url'], None))
+            self.conection.commit() 
+        else:
+            for com in data['comments']:
+                if (data['url'],com) in existed_coms:
+                    pass
+                else:
+                    self.cursorObj.execute('INSERT INTO comments(recipe_id, com_name) VALUES(?,?)', (data['url'], com))
+                    self.conection.commit()
+                    
+    def full_insert(self, data):
+        self.insert_into_recipe(data)
+        self.insert_into_ingridients(data)
+        self.insert_into_ingredient_index(data)
+        self.insert_into_tags(data)
+        self.insert_into_tags_index(data)
+        self.insert_into_comments(data)
+        
+    def existed_ids(self, link_id):
+        id_rec = [row[0] for row in self.cursorObj.execute('select url_id from recipe').fetchall()]
+        if link_id in id_rec:
+            return True
+        else:
+            return False
+
+    def get_rec_by_tagname(self, tag):
+        return self.cursorObj.execute(f"""SELECT tg.tag_name, title, description, process FROM 'recipe' as rec 
+        join tags_index as tin 
+        on rec.url_id = tin.recipe_id 
+        join tags as tg 
+        on tg.id = tin.tag_id 
+        where tg.tag_name = '{tag}' limit 2000 """).fetchall()
+    
+    def get_by_date(self, date_):
+        return self.cursorObj.execute(f"""SELECT * FROM 'recipe' as rec  
+        where rec.add_time = '{date_}' """).fetchall()
+    
+    def amount_of_rows(self):
+        return len([row[0] for row in self.cursorObj.execute('select url_id from recipe').fetchall()])
+
+    def del_recipe(self, recipe_id):
+        self.cursorObj.execute(f'DELETE FROM  ingredient_index where recipe_id ={recipe_id}')
+        self.conection.commit() 
+        self.cursorObj.execute(f'DELETE FROM  tags_index where recipe_id ={recipe_id}')
+        self.conection.commit() 
+        self.cursorObj.execute(f'DELETE FROM comments where recipe_id ={recipe_id}')
+        self.conection.commit() 
+        self.cursorObj.execute(f'DELETE FROM  recipe where url_id ={recipe_id}')
+        self.conection.commit() 
+    
+    def del_ingredient(self, ingr_id):
+        self.cursorObj.execute(f'DELETE FROM  ingredient_index where ingridient_id ={ingr_id}')
+        self.conection.commit() 
+        self.cursorObj.execute(f'DELETE FROM ingridients where id ={ingr_id}')
+        self.conection.commit()
